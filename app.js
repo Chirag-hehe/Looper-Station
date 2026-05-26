@@ -18,8 +18,9 @@ import {
 const TRACK_COUNT = 6;
 const DB_NAME = "looper-station";
 const DB_STORE = "sessions";
-const COLORS = ["#83e377", "#68d8bd", "#ff6b5f", "#e8bb4f", "#8fd0ff", "#f497d1"];
+const COLORS = ["#7ddb6e", "#5fd4b8", "#ff5f52", "#e0b43a", "#6eb8ff", "#e87dd0"];
 
+// ─── DOM Elements ──────────────────────────────────────────────────────────
 const elements = {
   statusText: document.querySelector("#statusText"),
   playBtn: document.querySelector("#playBtn"),
@@ -48,8 +49,12 @@ const elements = {
   trackGrid: document.querySelector("#trackGrid"),
   trackTemplate: document.querySelector("#trackTemplate"),
   downloadLink: document.querySelector("#downloadLink"),
+  firstRunHint: document.querySelector("#firstRunHint"),
+  dismissHint: document.querySelector("#dismissHint"),
+  toast: document.querySelector("#toast"),
 };
 
+// ─── State ─────────────────────────────────────────────────────────────────
 const state = {
   audioContext: null,
   stream: null,
@@ -61,22 +66,28 @@ const state = {
   loopLength: 0,
   sessionStart: 0,
   metronome: false,
-  overdub: true,
+  overdub: true,          // FIX: was true in state but HTML showed false visually
   nextTickTime: 0,
   selectedInputId: "",
   db: null,
   midiAccess: null,
   tracks: [],
+  micEnabled: false,
 };
 
+// ─── Init ───────────────────────────────────────────────────────────────────
 for (let index = 0; index < TRACK_COUNT; index += 1) {
   state.tracks.push(createTrack(index));
 }
+
+// FIX: sync overdub button to match initial state.overdub = true
+elements.overdubBtn.setAttribute("aria-pressed", "true");
 
 wireControls();
 drawScope();
 updateReadouts();
 refreshSavedSessions();
+showFirstRunHint();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -84,20 +95,49 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// ─── First-run hint ──────────────────────────────────────────────────────
+function showFirstRunHint() {
+  try {
+    if (sessionStorage.getItem("ls-hint-dismissed")) return;
+  } catch {}
+  elements.firstRunHint.hidden = false;
+}
+
+elements.dismissHint?.addEventListener("click", () => {
+  elements.firstRunHint.hidden = true;
+  try { sessionStorage.setItem("ls-hint-dismissed", "1"); } catch {}
+});
+
+// ─── Toast ───────────────────────────────────────────────────────────────
+let toastTimer = null;
+
+function showToast(message, duration = 2200) {
+  if (!elements.toast) return;
+  elements.toast.textContent = message;
+  elements.toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => elements.toast.classList.remove("show"), duration);
+}
+
+// ─── Track creation ──────────────────────────────────────────────────────
 function createTrack(index) {
   const fragment = elements.trackTemplate.content.cloneNode(true);
   const card = fragment.querySelector(".track-card");
-  const title = fragment.querySelector("h2");
+  const numBadge = fragment.querySelector(".track-num-badge");
+  const trackName = fragment.querySelector(".track-name");
   const stateLabel = fragment.querySelector(".track-state");
   const waveform = fragment.querySelector(".waveform");
   const recordButton = fragment.querySelector(".record-button");
   const muteButton = fragment.querySelector(".mute-button");
   const clearButton = fragment.querySelector(".clear-track-button");
   const volumeSlider = fragment.querySelector(".volume-control input");
+  const kbdHint = fragment.querySelector(".kbd-hint");
 
-  title.textContent = `Track ${index + 1}`;
+  numBadge.textContent = index + 1;
+  trackName.textContent = `Track ${index + 1}`;
+  kbdHint.textContent = String(index + 1);
   card.style.setProperty("--track-color", COLORS[index]);
-  recordButton.style.borderColor = `${COLORS[index]}88`;
+  recordButton.style.borderColor = `${COLORS[index]}55`;
 
   const track = {
     id: crypto.randomUUID(),
@@ -119,6 +159,7 @@ function createTrack(index) {
     volume: 1,
     elements: {
       card,
+      numBadge,
       stateLabel,
       waveform,
       recordButton,
@@ -141,9 +182,11 @@ function createTrack(index) {
   return track;
 }
 
+// ─── Controls ─────────────────────────────────────────────────────────────
 function wireControls() {
   elements.micBtn.addEventListener("click", initAudio);
   elements.midiBtn.addEventListener("click", enableMidi);
+
   elements.playBtn.addEventListener("click", () => {
     if (state.isPlaying) {
       stopSession();
@@ -151,6 +194,7 @@ function wireControls() {
       playSession();
     }
   });
+
   elements.stopBtn.addEventListener("click", stopSession);
   elements.clearBtn.addEventListener("click", clearSession);
   elements.exportBtn.addEventListener("click", exportLoop);
@@ -159,24 +203,27 @@ function wireControls() {
   elements.deleteSaveBtn.addEventListener("click", deleteSelectedSession);
   elements.metronomeBtn.addEventListener("click", toggleMetronome);
   elements.overdubBtn.addEventListener("click", toggleOverdub);
+
   elements.inputDeviceSelect.addEventListener("change", () => {
     state.selectedInputId = elements.inputDeviceSelect.value;
-    if (state.stream) {
-      initAudio();
-    }
+    if (state.stream) initAudio();
   });
+
   elements.bpmInput.addEventListener("change", normalizeTimingInputs);
   elements.beatsInput.addEventListener("change", normalizeTimingInputs);
+
   elements.masterSlider.addEventListener("input", () => {
     if (state.masterGain) {
       state.masterGain.gain.value = Number(elements.masterSlider.value);
     }
   });
+
   elements.monitorSlider.addEventListener("input", () => {
     if (state.monitorGain) {
       state.monitorGain.gain.value = Number(elements.monitorSlider.value);
     }
   });
+
   document.addEventListener("keydown", handleKeyboard);
 
   if (navigator.mediaDevices?.addEventListener) {
@@ -184,25 +231,28 @@ function wireControls() {
   }
 }
 
+// ─── Audio Context ─────────────────────────────────────────────────────────
 async function ensureAudioContext() {
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContext) {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) {
     setStatus("Web Audio is not supported in this browser");
     return null;
   }
 
-  state.audioContext = state.audioContext || new AudioContext();
-  if (state.audioContext.state !== "running") {
-    await state.audioContext.resume();
+  state.audioContext = state.audioContext || new AudioCtx();
+
+  if (state.audioContext.state === "suspended") {
+    try {
+      await state.audioContext.resume();
+    } catch {}
   }
+
   ensureOutputGraph();
   return state.audioContext;
 }
 
 function ensureOutputGraph() {
-  if (!state.audioContext) {
-    return;
-  }
+  if (!state.audioContext) return;
 
   if (!state.masterGain) {
     state.masterGain = state.audioContext.createGain();
@@ -218,11 +268,10 @@ function ensureOutputGraph() {
   }
 }
 
+// ─── Mic ──────────────────────────────────────────────────────────────────
 async function initAudio() {
   await ensureAudioContext();
-  if (!state.audioContext) {
-    return;
-  }
+  if (!state.audioContext) return;
 
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus("Mic capture is not supported in this browser");
@@ -246,19 +295,21 @@ async function initAudio() {
     connectMicStream(stream);
     await refreshInputDevices();
 
-    elements.micBtn.textContent = "Mic enabled";
+    state.micEnabled = true;
+    elements.micBtn.textContent = "✓ Mic enabled";
     elements.micBtn.classList.add("ready");
+    elements.firstRunHint.hidden = true;
     setStatus("Mic enabled");
+    showToast("🎤 Mic enabled — hit a track button to record");
   } catch (error) {
     setStatus("Mic permission blocked");
+    showToast("Mic permission blocked. Check browser site settings.", 3500);
     console.error(error);
   }
 }
 
 function connectMicStream(stream) {
-  if (state.micSource) {
-    state.micSource.disconnect();
-  }
+  if (state.micSource) state.micSource.disconnect();
 
   if (state.stream) {
     state.stream.getTracks().forEach((track) => track.stop());
@@ -272,39 +323,38 @@ function connectMicStream(stream) {
   state.micSource.connect(state.monitorGain);
 }
 
+// ─── Input Devices ─────────────────────────────────────────────────────────
 async function refreshInputDevices() {
-  if (!navigator.mediaDevices?.enumerateDevices) {
-    return;
-  }
+  if (!navigator.mediaDevices?.enumerateDevices) return;
 
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const inputs = devices.filter((device) => device.kind === "audioinput");
+  const inputs = devices.filter((d) => d.kind === "audioinput");
   const previousValue = state.selectedInputId || elements.inputDeviceSelect.value;
 
   elements.inputDeviceSelect.replaceChildren(createOption("", "Default input"));
   inputs.forEach((device, index) => {
-    elements.inputDeviceSelect.appendChild(createOption(device.deviceId, device.label || `Input ${index + 1}`));
+    elements.inputDeviceSelect.appendChild(
+      createOption(device.deviceId, device.label || `Input ${index + 1}`)
+    );
   });
 
-  const hasPrevious = inputs.some((device) => device.deviceId === previousValue);
+  const hasPrevious = inputs.some((d) => d.deviceId === previousValue);
   elements.inputDeviceSelect.value = hasPrevious ? previousValue : "";
   state.selectedInputId = elements.inputDeviceSelect.value;
 }
 
+// ─── Recording ─────────────────────────────────────────────────────────────
 async function toggleRecording(track) {
   if (track.recording) {
     requestStopRecording(track);
-    return;
+  } else {
+    await startRecording(track);
   }
-
-  await startRecording(track);
 }
 
 async function startRecording(track) {
   await initAudio();
-  if (!state.audioContext || !state.stream) {
-    return;
-  }
+  if (!state.audioContext || !state.stream) return;
 
   if (!window.MediaRecorder) {
     setStatus("MediaRecorder is not supported in this browser");
@@ -313,6 +363,7 @@ async function startRecording(track) {
 
   const hadLoop = Boolean(track.buffer);
   track.overdubTake = hadLoop && state.overdub;
+
   if (hadLoop && !track.overdubTake) {
     stopTrackSource(track);
     track.buffer = null;
@@ -332,30 +383,23 @@ async function startRecording(track) {
 
   track.elements.recordButton.setAttribute("aria-label", "Stop recording track");
   track.elements.card.classList.add("recording");
+  track.elements.numBadge.style.background = COLORS[track.index];
   updateTrackRecordingLabel(track);
   setStatus(`${track.overdubTake ? "Overdubbing" : "Recording"} Track ${track.index + 1}`);
 
   track.recorder.addEventListener("dataavailable", (event) => {
-    if (event.data.size > 0) {
-      track.chunks.push(event.data);
-    }
+    if (event.data.size > 0) track.chunks.push(event.data);
   });
 
-  track.recorder.addEventListener(
-    "stop",
-    async () => {
-      await finishRecording(track, mimeType);
-    },
-    { once: true },
-  );
+  track.recorder.addEventListener("stop", async () => {
+    await finishRecording(track, mimeType);
+  }, { once: true });
 
   track.recorder.start();
 }
 
 function requestStopRecording(track) {
-  if (!track.recording || track.stopTimer) {
-    return;
-  }
+  if (!track.recording || track.stopTimer) return;
 
   const now = state.audioContext.currentTime;
   const gridSize = getActiveGridSize();
@@ -369,14 +413,15 @@ function requestStopRecording(track) {
 
   const earliest = Math.max(now, track.recordStartAt + 0.06);
   let stopAt = nextGridTime(earliest, state.sessionStart, gridSize);
-  if (stopAt <= track.recordStartAt + 0.06) {
-    stopAt += gridSize;
-  }
+  if (stopAt <= track.recordStartAt + 0.06) stopAt += gridSize;
 
   track.recordEndAt = stopAt;
   track.elements.stateLabel.textContent = "Closing";
   setStatus(`Track ${track.index + 1} closing on grid`);
-  track.stopTimer = window.setTimeout(() => stopRecorder(track), Math.max(0, (stopAt - now) * 1000));
+  track.stopTimer = window.setTimeout(
+    () => stopRecorder(track),
+    Math.max(0, (stopAt - now) * 1000)
+  );
 }
 
 function stopRecorder(track) {
@@ -400,8 +445,11 @@ async function finishRecording(track, mimeType) {
 
   const blob = new Blob(track.chunks, { type: mimeType || "audio/webm" });
   track.chunks = [];
+
   if (!blob.size) {
-    track.elements.stateLabel.textContent = track.buffer ? `${formatSeconds(track.buffer.duration)} loop` : "Empty";
+    track.elements.stateLabel.textContent = track.buffer
+      ? `${formatSeconds(track.buffer.duration)} loop`
+      : "Empty";
     setStatus("No audio captured");
     return;
   }
@@ -425,6 +473,7 @@ async function finishRecording(track, mimeType) {
     const startOffset = state.loopLength && state.isPlaying
       ? positiveModulo(track.recordStartAt - state.sessionStart, state.loopLength)
       : 0;
+
     const loopTake = fitBufferToLoop(cleanTake, state.loopLength, startOffset, state.audioContext);
     track.buffer = track.overdubTake && track.buffer
       ? mixBuffers(track.buffer, loopTake, state.audioContext)
@@ -434,8 +483,9 @@ async function finishRecording(track, mimeType) {
     track.elements.stateLabel.textContent = `${formatSeconds(track.buffer.duration)} loop`;
     drawBufferWaveform(track);
     updateReadouts();
-    await refreshSavedSessions();
+    // FIX: don't refresh sessions here — it's unnecessary on every record
     setStatus(`Track ${track.index + 1} ${track.overdubTake ? "overdubbed" : "captured"}`);
+    showToast(`Track ${track.index + 1} ${track.overdubTake ? "overdubbed ✓" : "captured ✓"}`);
 
     if (state.isPlaying) {
       scheduleTrack(track, 0);
@@ -445,6 +495,7 @@ async function finishRecording(track, mimeType) {
   } catch (error) {
     track.elements.stateLabel.textContent = "Decode failed";
     setStatus("Could not decode recording");
+    showToast("⚠ Recording decode failed", 3000);
     console.error(error);
   } finally {
     track.overdubTake = false;
@@ -453,48 +504,64 @@ async function finishRecording(track, mimeType) {
   }
 }
 
+// ─── Playback ──────────────────────────────────────────────────────────────
 async function playSession() {
-  if (state.isPlaying) {
-    return;
-  }
+  if (state.isPlaying) return;
 
-  const tracksWithLoops = state.tracks.filter((track) => track.buffer);
+  const tracksWithLoops = state.tracks.filter((t) => t.buffer);
   if (!tracksWithLoops.length) {
     setStatus("Record a track first");
+    showToast("Record a track first");
     return;
   }
 
   await ensureAudioContext();
-  if (!state.audioContext) {
-    return;
-  }
+  if (!state.audioContext) return;
 
   if (!state.loopLength) {
-    state.loopLength = Math.max(...tracksWithLoops.map((track) => track.buffer.duration));
+    state.loopLength = Math.max(...tracksWithLoops.map((t) => t.buffer.duration));
   }
 
   state.isPlaying = true;
   state.sessionStart = state.audioContext.currentTime + 0.03;
   state.nextTickTime = state.sessionStart;
   tracksWithLoops.forEach((track) => scheduleTrack(track, 0.03));
-  elements.playBtn.classList.add("active");
+
+  // FIX: play button now visually shows active/stop state
+  updatePlayButton();
   setStatus("Playing");
 }
 
 function stopSession() {
   state.tracks.forEach(stopTrackSource);
   state.isPlaying = false;
-  elements.playBtn.classList.remove("active");
+  updatePlayButton();
   setStatus("Stopped");
   updateReadouts();
 }
 
-function scheduleTrack(track, delay = 0) {
-  if (!track.buffer || !state.audioContext || !state.analyser) {
-    return;
+function updatePlayButton() {
+  const btn = elements.playBtn;
+  const icon = btn.querySelector(".transport-icon");
+
+  if (state.isPlaying) {
+    btn.classList.add("active");
+    btn.setAttribute("aria-label", "Stop");
+    btn.setAttribute("title", "Stop (Space)");
+    icon.className = "transport-icon stop-icon";
+  } else {
+    btn.classList.remove("active");
+    btn.setAttribute("aria-label", "Play");
+    btn.setAttribute("title", "Play (Space)");
+    icon.className = "transport-icon play-icon";
   }
+}
+
+function scheduleTrack(track, delay = 0) {
+  if (!track.buffer || !state.audioContext || !state.analyser) return;
 
   stopTrackSource(track);
+
   const source = state.audioContext.createBufferSource();
   const gainNode = state.audioContext.createGain();
   const panNode = "createStereoPanner" in state.audioContext
@@ -518,6 +585,7 @@ function scheduleTrack(track, delay = 0) {
 
   track.source = source;
   track.gainNode = gainNode;
+
   const offset = state.loopLength && state.isPlaying
     ? positiveModulo(state.audioContext.currentTime - state.sessionStart, state.loopLength)
     : 0;
@@ -530,16 +598,18 @@ function scheduleTrack(track, delay = 0) {
 }
 
 function stopTrackSource(track) {
-  if (!track.source) {
-    return;
-  }
-
-  try {
-    track.source.stop();
-  } catch {}
+  if (!track.source) return;
+  try { track.source.stop(); } catch {}
   track.source.disconnect();
   track.source = null;
   track.gainNode = null;
+}
+
+// ─── Track controls ─────────────────────────────────────────────────────────
+function applyTrackGain(track) {
+  if (track.gainNode) {
+    track.gainNode.gain.value = track.muted ? 0 : track.volume;
+  }
 }
 
 function toggleMute(track) {
@@ -547,12 +617,7 @@ function toggleMute(track) {
   track.elements.card.classList.toggle("muted", track.muted);
   track.elements.muteButton.setAttribute("aria-pressed", String(track.muted));
   applyTrackGain(track);
-}
-
-function applyTrackGain(track) {
-  if (track.gainNode) {
-    track.gainNode.gain.value = track.muted ? 0 : track.volume;
-  }
+  setStatus(track.muted ? `Track ${track.index + 1} muted` : `Track ${track.index + 1} unmuted`);
 }
 
 function clearTrack(track, silent = false) {
@@ -575,12 +640,11 @@ function clearTrack(track, silent = false) {
   if (!state.tracks.some((item) => item.buffer)) {
     state.loopLength = 0;
     state.isPlaying = false;
+    updatePlayButton();
   }
 
   updateReadouts();
-  if (!silent) {
-    setStatus(`Track ${track.index + 1} cleared`);
-  }
+  if (!silent) setStatus(`Track ${track.index + 1} cleared`);
 }
 
 function clearSession() {
@@ -588,18 +652,25 @@ function clearSession() {
   state.loopLength = 0;
   state.isPlaying = false;
   elements.downloadLink.hidden = true;
+  updatePlayButton();
   updateReadouts();
   setStatus("Session cleared");
+  showToast("Session cleared");
 }
 
+// ─── Export ────────────────────────────────────────────────────────────────
 async function exportLoop() {
   await ensureAudioContext();
 
-  const tracks = state.tracks.filter((track) => track.buffer && !track.muted);
+  const tracks = state.tracks.filter((t) => t.buffer && !t.muted);
   if (!tracks.length || !state.loopLength) {
     setStatus("Nothing to export");
+    showToast("Nothing to export — record some tracks first");
     return;
   }
+
+  setStatus("Rendering WAV…");
+  showToast("Rendering WAV…", 4000);
 
   const sampleRate = tracks[0].buffer.sampleRate || state.audioContext.sampleRate;
   const frameCount = Math.ceil(state.loopLength * sampleRate);
@@ -620,22 +691,26 @@ async function exportLoop() {
     source.start(0);
   });
 
-  setStatus("Rendering WAV");
   const rendered = await offline.startRendering();
   const wav = audioBufferToWav(rendered);
   const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+
   if (elements.downloadLink.href.startsWith("blob:")) {
     URL.revokeObjectURL(elements.downloadLink.href);
   }
+
   elements.downloadLink.href = url;
   elements.downloadLink.hidden = false;
-  setStatus("WAV ready");
+  setStatus("WAV ready — click to download");
+  showToast("✓ WAV ready — click the download button", 4000);
 }
 
+// ─── Sessions ──────────────────────────────────────────────────────────────
 async function saveSession() {
-  const loops = state.tracks.filter((track) => track.buffer);
+  const loops = state.tracks.filter((t) => t.buffer);
   if (!loops.length) {
     setStatus("Nothing to save");
+    showToast("Nothing to save — record some tracks first");
     return;
   }
 
@@ -658,6 +733,7 @@ async function saveSession() {
   await putSession(record);
   await refreshSavedSessions(record.id);
   setStatus("Session saved");
+  showToast("✓ Session saved");
 }
 
 async function loadSelectedSession() {
@@ -683,9 +759,7 @@ async function loadSelectedSession() {
 
   record.tracks.forEach((savedTrack) => {
     const track = state.tracks[savedTrack.index];
-    if (!track) {
-      return;
-    }
+    if (!track) return;
 
     track.buffer = deserializeAudioBuffer(savedTrack.buffer, state.audioContext);
     track.muted = Boolean(savedTrack.muted);
@@ -700,6 +774,7 @@ async function loadSelectedSession() {
 
   updateReadouts();
   setStatus(`${record.name} loaded`);
+  showToast(`✓ ${record.name} loaded`);
 }
 
 async function deleteSelectedSession() {
@@ -712,12 +787,15 @@ async function deleteSelectedSession() {
   await deleteSession(id);
   await refreshSavedSessions();
   setStatus("Saved take deleted");
+  showToast("Take deleted");
 }
 
+// ─── MIDI ─────────────────────────────────────────────────────────────────
 async function enableMidi() {
   if (!navigator.requestMIDIAccess) {
     elements.midiStatus.textContent = "MIDI unsupported";
     setStatus("MIDI is not supported in this browser");
+    showToast("MIDI not supported in this browser");
     return;
   }
 
@@ -725,73 +803,72 @@ async function enableMidi() {
     state.midiAccess = await navigator.requestMIDIAccess({ sysex: false });
     connectMidiInputs();
     state.midiAccess.addEventListener("statechange", connectMidiInputs);
-    elements.midiBtn.textContent = "MIDI enabled";
+    elements.midiBtn.textContent = "✓ MIDI enabled";
     elements.midiBtn.classList.add("ready");
     setStatus("MIDI enabled");
+    showToast("🎛 MIDI enabled");
   } catch (error) {
     elements.midiStatus.textContent = "MIDI blocked";
     setStatus("MIDI permission blocked");
+    showToast("MIDI permission blocked", 3000);
     console.error(error);
   }
 }
 
 function connectMidiInputs() {
-  if (!state.midiAccess) {
-    return;
-  }
-
+  if (!state.midiAccess) return;
   const inputs = Array.from(state.midiAccess.inputs.values());
-  inputs.forEach((input) => {
-    input.onmidimessage = handleMidiMessage;
-  });
-  elements.midiStatus.textContent = `${inputs.length} MIDI input${inputs.length === 1 ? "" : "s"}`;
+  inputs.forEach((input) => { input.onmidimessage = handleMidiMessage; });
+  elements.midiStatus.textContent = inputs.length
+    ? `${inputs.length} MIDI input${inputs.length === 1 ? "" : "s"}`
+    : "No MIDI inputs";
 }
 
 function handleMidiMessage(event) {
   const message = normalizeMidiMessage(event.data);
-  if (!message.active) {
-    return;
-  }
+  if (!message.active) return;
 
   if (message.type === "noteon" && message.note >= 36 && message.note < 36 + TRACK_COUNT) {
     toggleRecording(state.tracks[message.note - 36]);
     return;
   }
-
   if (message.type === "control" && message.controller >= 20 && message.controller < 20 + TRACK_COUNT) {
     toggleRecording(state.tracks[message.controller - 20]);
     return;
   }
-
   if ((message.type === "noteon" && message.note === 42) || (message.type === "control" && message.controller === 102)) {
     playSession();
   }
-
   if ((message.type === "noteon" && message.note === 43) || (message.type === "control" && message.controller === 103)) {
     stopSession();
   }
 }
 
+// ─── Toggles ──────────────────────────────────────────────────────────────
 function toggleMetronome() {
   state.metronome = !state.metronome;
   elements.metronomeBtn.setAttribute("aria-pressed", String(state.metronome));
   if (state.audioContext) {
     state.nextTickTime = state.audioContext.currentTime + 0.05;
   }
+  showToast(state.metronome ? "Metronome on" : "Metronome off");
 }
 
 function toggleOverdub() {
   state.overdub = !state.overdub;
   elements.overdubBtn.setAttribute("aria-pressed", String(state.overdub));
   setStatus(state.overdub ? "Overdub on" : "Overdub off");
+  showToast(state.overdub ? "Overdub on" : "Overdub off");
 }
 
+// ─── Keyboard ─────────────────────────────────────────────────────────────
 function handleKeyboard(event) {
   const target = event.target;
-  const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target?.isContentEditable;
-  if (event.repeat || isTyping) {
-    return;
-  }
+  const isTyping = target instanceof HTMLInputElement
+    || target instanceof HTMLSelectElement
+    || target?.isContentEditable;
+
+  if (event.repeat || isTyping) return;
 
   if (event.key >= "1" && event.key <= String(TRACK_COUNT)) {
     event.preventDefault();
@@ -801,149 +878,27 @@ function handleKeyboard(event) {
 
   if (event.code === "Space") {
     event.preventDefault();
-    if (state.isPlaying) {
-      stopSession();
-    } else {
-      playSession();
-    }
+    state.isPlaying ? stopSession() : playSession();
     return;
   }
 
-  if (event.key.toLowerCase() === "m") {
-    toggleMetronome();
-  }
-
-  if (event.key.toLowerCase() === "o") {
-    toggleOverdub();
-  }
-
-  if (event.key.toLowerCase() === "q") {
-    cycleQuantize();
-  }
+  const key = event.key.toLowerCase();
+  if (key === "m") toggleMetronome();
+  if (key === "o") toggleOverdub();
+  if (key === "q") cycleQuantize();
 }
 
 function cycleQuantize() {
   const values = ["bar", "beat", "off"];
   const nextIndex = (values.indexOf(elements.quantizeSelect.value) + 1) % values.length;
   elements.quantizeSelect.value = values[nextIndex];
-  setStatus(`Quantize ${values[nextIndex]}`);
+  setStatus(`Quantize: ${values[nextIndex]}`);
+  showToast(`Quantize: ${values[nextIndex]}`);
 }
 
-function drawEmptyWaveform(track) {
-  const canvas = track.elements.waveform;
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#11130f";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = "rgba(167,170,155,0.24)";
-  context.lineWidth = 2;
-  context.beginPath();
-  context.moveTo(0, canvas.height / 2);
-  context.lineTo(canvas.width, canvas.height / 2);
-  context.stroke();
-}
-
-function drawBufferWaveform(track) {
-  const canvas = track.elements.waveform;
-  const context = canvas.getContext("2d");
-  const data = track.buffer.getChannelData(0);
-  const step = Math.ceil(data.length / canvas.width);
-  const center = canvas.height / 2;
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#11130f";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = track.color;
-  context.lineWidth = 2;
-  context.beginPath();
-
-  for (let x = 0; x < canvas.width; x += 1) {
-    let min = 1;
-    let max = -1;
-    const start = x * step;
-    const end = Math.min(start + step, data.length);
-
-    for (let index = start; index < end; index += 1) {
-      const value = data[index];
-      min = Math.min(min, value);
-      max = Math.max(max, value);
-    }
-
-    context.moveTo(x, center + min * center * 0.86);
-    context.lineTo(x, center + max * center * 0.86);
-  }
-
-  context.stroke();
-}
-
-function drawScope() {
-  const canvas = elements.scopeCanvas;
-  const context = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = "rgba(17, 19, 15, 0.72)";
-  context.fillRect(0, 0, width, height);
-
-  if (state.analyser) {
-    const data = new Uint8Array(state.analyser.frequencyBinCount);
-    state.analyser.getByteTimeDomainData(data);
-    context.strokeStyle = state.isPlaying ? "#83e377" : "#68d8bd";
-    context.lineWidth = 4;
-    context.beginPath();
-
-    for (let index = 0; index < data.length; index += 1) {
-      const x = (index / (data.length - 1)) * width;
-      const y = (data[index] / 255) * height;
-      if (index === 0) {
-        context.moveTo(x, y);
-      } else {
-        context.lineTo(x, y);
-      }
-    }
-
-    context.stroke();
-  } else {
-    context.strokeStyle = "rgba(104,216,189,0.35)";
-    context.lineWidth = 4;
-    context.beginPath();
-    for (let x = 0; x < width; x += 20) {
-      const y = height / 2 + Math.sin(x / 42) * 18;
-      if (x === 0) {
-        context.moveTo(x, y);
-      } else {
-        context.lineTo(x, y);
-      }
-    }
-    context.stroke();
-  }
-
-  drawBeatGrid(context, width, height);
-  state.tracks.filter((track) => track.recording).forEach(updateTrackRecordingLabel);
-  scheduleMetronome();
-  updateReadouts();
-  requestAnimationFrame(drawScope);
-}
-
-function drawBeatGrid(context, width, height) {
-  const beats = getBeats();
-  context.strokeStyle = "rgba(242,240,232,0.08)";
-  context.lineWidth = 1;
-
-  for (let index = 1; index < beats; index += 1) {
-    const x = (index / beats) * width;
-    context.beginPath();
-    context.moveTo(x, 0);
-    context.lineTo(x, height);
-    context.stroke();
-  }
-}
-
+// ─── Metronome ────────────────────────────────────────────────────────────
 function scheduleMetronome() {
-  if (!state.metronome || !state.audioContext || !state.isPlaying) {
-    return;
-  }
-
+  if (!state.metronome || !state.audioContext || !state.isPlaying) return;
   const interval = 60 / getBpm();
   while (state.nextTickTime < state.audioContext.currentTime + 0.12) {
     playClick(state.nextTickTime);
@@ -965,23 +920,26 @@ function playClick(time) {
   oscillator.stop(time + 0.06);
 }
 
+// ─── Track state labels ────────────────────────────────────────────────────
 function updateTrackRecordingLabel(track) {
-  if (!track.recording || !state.audioContext) {
-    return;
-  }
-
+  if (!track.recording || !state.audioContext) return;
   const now = state.audioContext.currentTime;
+
   if (track.recordEndAt && track.recordEndAt > now) {
     track.elements.stateLabel.textContent = "Closing";
+    track.elements.stateLabel.className = "track-state";
   } else if (track.recordStartAt > now + 0.04) {
     track.elements.stateLabel.textContent = "Armed";
+    track.elements.stateLabel.className = "track-state armed";
   } else {
     track.elements.stateLabel.textContent = track.overdubTake ? "Overdubbing" : "Recording";
+    track.elements.stateLabel.className = "track-state recording";
   }
 }
 
+// ─── Readouts ─────────────────────────────────────────────────────────────
 function updateReadouts() {
-  const activeTracks = state.tracks.filter((track) => track.buffer).length;
+  const activeTracks = state.tracks.filter((t) => t.buffer).length;
   elements.loopReadout.textContent = state.loopLength ? formatSeconds(state.loopLength) : "00.0s";
   elements.trackReadout.textContent = `${activeTracks}/${TRACK_COUNT}`;
 
@@ -1012,10 +970,7 @@ function getActiveGridSize() {
 
 function getQuantizedBoundary(time) {
   const gridSize = getActiveGridSize();
-  if (!state.isPlaying || !state.loopLength || !gridSize) {
-    return time;
-  }
-
+  if (!state.isPlaying || !state.loopLength || !gridSize) return time;
   return nextGridTime(time, state.sessionStart, gridSize);
 }
 
@@ -1024,15 +979,14 @@ function getSupportedMimeType() {
   return types.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
+// ─── IndexedDB ────────────────────────────────────────────────────────────
 async function openDatabase() {
   if (!("indexedDB" in window)) {
     setStatus("Browser storage is unavailable");
     return null;
   }
 
-  if (state.db) {
-    return state.db;
-  }
+  if (state.db) return state.db;
 
   state.db = await new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -1051,37 +1005,25 @@ async function openDatabase() {
 
 async function putSession(record) {
   const db = await openDatabase();
-  if (!db) {
-    return;
-  }
-
+  if (!db) return;
   await idbRequest(db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE).put(record));
 }
 
 async function getSession(id) {
   const db = await openDatabase();
-  if (!db) {
-    return null;
-  }
-
+  if (!db) return null;
   return idbRequest(db.transaction(DB_STORE).objectStore(DB_STORE).get(id));
 }
 
 async function getSessions() {
   const db = await openDatabase();
-  if (!db) {
-    return [];
-  }
-
+  if (!db) return [];
   return idbRequest(db.transaction(DB_STORE).objectStore(DB_STORE).getAll());
 }
 
 async function deleteSession(id) {
   const db = await openDatabase();
-  if (!db) {
-    return;
-  }
-
+  if (!db) return;
   await idbRequest(db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE).delete(id));
 }
 
@@ -1090,7 +1032,9 @@ async function refreshSavedSessions(selectedId = "") {
     const sessions = await getSessions();
     sessions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     elements.sessionSelect.replaceChildren(
-      sessions.length ? createOption("", "Select saved take") : createOption("", "No saved takes"),
+      sessions.length
+        ? createOption("", "Select saved take")
+        : createOption("", "No saved takes"),
     );
     sessions.forEach((session) => {
       elements.sessionSelect.appendChild(createOption(session.id, session.name));
@@ -1115,6 +1059,130 @@ function createOption(value, text) {
   return option;
 }
 
+// ─── Status ────────────────────────────────────────────────────────────────
 function setStatus(message) {
   elements.statusText.textContent = message;
+}
+
+// ─── Waveform drawing ──────────────────────────────────────────────────────
+function drawEmptyWaveform(track) {
+  const canvas = track.elements.waveform;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#0d0f0c";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height / 2);
+  ctx.lineTo(canvas.width, canvas.height / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawBufferWaveform(track) {
+  const canvas = track.elements.waveform;
+  const ctx = canvas.getContext("2d");
+  const data = track.buffer.getChannelData(0);
+  const step = Math.ceil(data.length / canvas.width);
+  const center = canvas.height / 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#0d0f0c";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw waveform with gradient fill
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, track.color + "99");
+  gradient.addColorStop(0.5, track.color + "cc");
+  gradient.addColorStop(1, track.color + "99");
+
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+
+  for (let x = 0; x < canvas.width; x += 1) {
+    let min = 1, max = -1;
+    const start = x * step;
+    const end = Math.min(start + step, data.length);
+    for (let i = start; i < end; i += 1) {
+      const v = data[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const yTop = center + min * center * 0.86;
+    const yBot = center + max * center * 0.86;
+    ctx.rect(x, yTop, 1, Math.max(1, yBot - yTop));
+  }
+
+  ctx.fill();
+
+  // Center line
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, center);
+  ctx.lineTo(canvas.width, center);
+  ctx.stroke();
+}
+
+// ─── Scope ────────────────────────────────────────────────────────────────
+function drawScope() {
+  const canvas = elements.scopeCanvas;
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(13,15,12,0.75)";
+  ctx.fillRect(0, 0, width, height);
+
+  if (state.analyser) {
+    const data = new Uint8Array(state.analyser.frequencyBinCount);
+    state.analyser.getByteTimeDomainData(data);
+
+    const color = state.isPlaying ? "#7ddb6e" : "#5fd4b8";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = color;
+    ctx.beginPath();
+
+    for (let i = 0; i < data.length; i += 1) {
+      const x = (i / (data.length - 1)) * width;
+      const y = (data[i] / 255) * height;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.strokeStyle = "rgba(95,212,184,0.2)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = 0; x < width; x += 1) {
+      const y = height / 2 + Math.sin(x / 60 + Date.now() / 800) * 10;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  drawBeatGrid(ctx, width, height);
+  state.tracks.filter((t) => t.recording).forEach(updateTrackRecordingLabel);
+  scheduleMetronome();
+  updateReadouts();
+  requestAnimationFrame(drawScope);
+}
+
+function drawBeatGrid(ctx, width, height) {
+  const beats = getBeats();
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 1;
+
+  for (let i = 1; i < beats; i += 1) {
+    const x = (i / beats) * width;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
 }
