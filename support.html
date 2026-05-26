@@ -4,11 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Support and hardware notes for Looper Station." />
-    <meta name="theme-color" content="#10110f" />
+    <meta name="theme-color" content="#0c0d0b" />
     <title>Support | Looper Station</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   </head>
   <body>
     <header class="site-header">
@@ -21,7 +23,7 @@
           <a href="index.html#studio">Studio</a>
           <a href="index.html#hardware">Hardware</a>
           <a href="index.html#android">Android</a>
-          <a href="support.html">Support</a>
+          <a href="support.html" class="active">Support</a>
           <a href="privacy.html">Privacy</a>
         </div>
       </nav>
@@ -30,7 +32,7 @@
     <main class="content-page">
       <section class="page-hero">
         <p class="eyebrow">Support</p>
-        <h1>Setup notes for recording and hardware.</h1>
+        <h1>Setup notes.</h1>
         <p>
           The browser version is useful for testing the workflow. For stage-grade performance, test with the exact
           phone, browser, audio interface, and controller you plan to use.
@@ -40,42 +42,63 @@
       <section class="text-section">
         <h2>Mic access</h2>
         <p>
-          Open the site from localhost or HTTPS, then select Enable mic. If the browser blocks the prompt, check site
-          permissions and reload.
+          Open the site from localhost or HTTPS, then click Enable mic in the control panel. If the browser blocks
+          the prompt, check site permissions in the address bar and reload.
         </p>
       </section>
 
       <section class="text-section">
         <h2>Audio interface</h2>
         <p>
-          Connect the interface before enabling the mic. After permission is granted, choose the device from the Input
-          menu. Wired headphones reduce feedback and latency.
+          Connect the interface before enabling the mic. After permission is granted, choose the device from the
+          Input menu. Wired headphones reduce feedback and latency significantly on stage.
         </p>
       </section>
 
       <section class="text-section">
         <h2>MIDI controller</h2>
         <p>
-          Enable MIDI from the control panel. Notes 36-41 or CC 20-25 control tracks 1-6. Note 42 or CC 102 starts
-          playback. Note 43 or CC 103 stops playback.
+          Enable MIDI from the control panel. Notes 36–41 or CC 20–25 control tracks 1–6.
+          Note 42 or CC 102 starts playback. Note 43 or CC 103 stops playback.
+          Works in Chrome and Edge; Firefox requires a MIDI browser extension.
+        </p>
+      </section>
+
+      <section class="text-section">
+        <h2>Keyboard shortcuts</h2>
+        <p>
+          Space toggles play/stop. Keys 1–6 arm the corresponding track. M toggles the metronome,
+          O toggles overdub, and Q cycles the quantize setting (Bar → Beat → Off).
         </p>
       </section>
 
       <section class="text-section">
         <h2>Saved takes</h2>
         <p>
-          Saved takes live in the current browser profile. Clearing site data can delete them. Export WAV files for
-          anything you want to keep outside the browser.
+          Saved takes live in the current browser profile using IndexedDB. Clearing site data in
+          your browser settings will delete them. Export WAV files for anything you want to keep
+          outside the browser permanently.
+        </p>
+      </section>
+
+      <section class="text-section">
+        <h2>Browser support</h2>
+        <p>
+          Chrome and Edge have the best support for Web Audio, MediaRecorder, and Web MIDI.
+          Firefox supports recording and playback. Safari supports recording on iOS 15+ but
+          does not support Web MIDI. For live performance, Chrome on desktop is recommended.
         </p>
       </section>
     </main>
 
-    <footer class="site-footer">
-      <span>Looper Station</span>
-      <div>
-        <a href="index.html#studio">Studio</a>
-        <a href="support.html">Support</a>
-        <a href="privacy.html">Privacy</a>
+    <footer>
+      <div class="site-footer">
+        <span class="footer-brand">Looper Station</span>
+        <div class="footer-links">
+          <a href="index.html#studio">Studio</a>
+          <a href="support.html">Support</a>
+          <a href="privacy.html">Privacy</a>
+        </div>
       </div>
     </footer>
   </body>
