@@ -1,0 +1,21 @@
+{
+  "name": "Looper Station",
+  "short_name": "Looper",
+  "description": "A browser-based live looping station for recording, layering, mixing, and exporting loops.",
+  "id": "/",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#10110f",
+  "background_color": "#10110f",
+  "categories": ["music", "entertainment", "productivity"],
+  "icons": [
+    {
+      "src": "assets/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

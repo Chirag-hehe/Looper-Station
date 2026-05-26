@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Looper Station is a local-first browser looper for recording, overdubbing, saving, and exporting live loops."
+    />
+    <meta name="theme-color" content="#10110f" />
+    <title>Looper Station</title>
+    <meta property="og:title" content="Looper Station" />
+    <meta property="og:description" content="Record loops, overdub, connect MIDI, save takes, and export WAV from the browser." />
+    <meta property="og:type" content="website" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="site-nav" aria-label="Main navigation">
+        <a class="site-brand" href="#studio" aria-label="Looper Station home">
+          <img class="site-mark" src="assets/app-icon.svg" alt="" />
+          <span>Looper Station</span>
+        </a>
+        <div class="nav-links">
+          <a href="#studio">Studio</a>
+          <a href="#hardware">Hardware</a>
+          <a href="#android">Android</a>
+          <a href="support.html">Support</a>
+          <a href="privacy.html">Privacy</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section id="studio" class="studio-band">
+        <div class="site-intro">
+          <p class="eyebrow">Browser looper for live layers</p>
+          <h1>Looper Station</h1>
+          <p>
+            Record vocals, instruments, or beatbox layers, overdub them into loops, save takes locally,
+            connect MIDI controls, and export a WAV when the idea lands.
+          </p>
+          <div class="signal-row" aria-label="Product signals">
+            <span>Local-first</span>
+            <span>MIDI-ready</span>
+            <span>PWA-ready</span>
+          </div>
+        </div>
+
+        <div class="app-shell">
+          <header class="topbar">
+            <div class="brand-block">
+              <img class="app-mark" src="assets/app-icon.svg" alt="" />
+              <div>
+                <p class="studio-title">Live Studio</p>
+                <p id="statusText" class="status-line">Ready</p>
+              </div>
+            </div>
+
+            <div class="transport" aria-label="Transport controls">
+              <button id="playBtn" class="icon-button primary" type="button" aria-label="Play" title="Play">
+                <span class="transport-icon play-icon" aria-hidden="true"></span>
+              </button>
+              <button id="stopBtn" class="icon-button" type="button" aria-label="Stop" title="Stop">
+                <span class="transport-icon stop-icon" aria-hidden="true"></span>
+              </button>
+              <button id="clearBtn" class="icon-button danger" type="button" aria-label="Clear all loops" title="Clear all loops">
+                <span class="transport-icon clear-icon" aria-hidden="true"></span>
+              </button>
+              <button id="exportBtn" class="icon-button" type="button" aria-label="Export loop as WAV" title="Export loop as WAV">
+                <span class="transport-icon export-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </header>
+
+          <section class="meter-strip" aria-label="Session meter">
+            <canvas id="scopeCanvas" width="1280" height="180" aria-hidden="true"></canvas>
+            <div class="readouts">
+              <div>
+                <span class="readout-label">Loop</span>
+                <strong id="loopReadout">00.0s</strong>
+              </div>
+              <div>
+                <span class="readout-label">Tracks</span>
+                <strong id="trackReadout">0/6</strong>
+              </div>
+              <div>
+                <span class="readout-label">Clock</span>
+                <strong id="clockReadout">00:00</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace">
+            <div id="trackGrid" class="track-grid" aria-label="Loop tracks"></div>
+
+            <aside class="control-panel" aria-label="Session controls">
+              <div class="control-row">
+                <label for="bpmInput">BPM</label>
+                <input id="bpmInput" type="number" min="45" max="220" value="90" inputmode="numeric" />
+              </div>
+
+              <div class="control-row">
+                <label for="beatsInput">Beats</label>
+                <input id="beatsInput" type="number" min="1" max="16" value="4" inputmode="numeric" />
+              </div>
+
+              <div class="control-row">
+                <label for="quantizeSelect">Quantize</label>
+                <select id="quantizeSelect">
+                  <option value="bar" selected>Bar</option>
+                  <option value="beat">Beat</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+
+              <div class="toggle-row">
+                <span>Metronome</span>
+                <button id="metronomeBtn" class="toggle-button" type="button" aria-pressed="false" aria-label="Toggle metronome">
+                  <span aria-hidden="true"></span>
+                </button>
+              </div>
+
+              <div class="toggle-row">
+                <span>Overdub</span>
+                <button id="overdubBtn" class="toggle-button" type="button" aria-pressed="true" aria-label="Toggle overdub">
+                  <span aria-hidden="true"></span>
+                </button>
+              </div>
+
+              <div class="control-row slider-row">
+                <label for="monitorSlider">Monitor</label>
+                <input id="monitorSlider" type="range" min="0" max="1" value="0" step="0.01" />
+              </div>
+
+              <div class="control-row slider-row">
+                <label for="masterSlider">Master</label>
+                <input id="masterSlider" type="range" min="0" max="1.25" value="0.95" step="0.01" />
+              </div>
+
+              <div class="control-row device-row">
+                <label for="inputDeviceSelect">Input</label>
+                <select id="inputDeviceSelect">
+                  <option value="">Default input</option>
+                </select>
+              </div>
+
+              <div class="control-row save-row">
+                <label for="sessionSelect">Saved take</label>
+                <select id="sessionSelect">
+                  <option value="">No saved takes</option>
+                </select>
+              </div>
+
+              <div class="button-row">
+                <button id="saveBtn" class="icon-button" type="button" aria-label="Save session" title="Save session">
+                  <span class="transport-icon save-icon" aria-hidden="true"></span>
+                </button>
+                <button id="loadBtn" class="icon-button" type="button" aria-label="Load selected session" title="Load selected session">
+                  <span class="transport-icon load-icon" aria-hidden="true"></span>
+                </button>
+                <button id="deleteSaveBtn" class="icon-button danger" type="button" aria-label="Delete selected session" title="Delete selected session">
+                  <span class="transport-icon clear-icon" aria-hidden="true"></span>
+                </button>
+              </div>
+
+              <button id="micBtn" class="wide-command" type="button">Enable mic</button>
+              <button id="midiBtn" class="wide-command" type="button">Enable MIDI</button>
+              <p id="midiStatus" class="panel-status">MIDI idle</p>
+              <a id="downloadLink" class="download-link" href="#" download="looper-station-loop.wav" hidden>WAV ready</a>
+            </aside>
+          </section>
+        </div>
+      </section>
+
+      <section id="hardware" class="site-section hardware-section">
+        <div class="section-inner split-layout">
+          <div>
+            <p class="eyebrow">External gear</p>
+            <h2>Bring your mic, interface, or footswitch.</h2>
+          </div>
+          <div class="info-grid">
+            <article class="info-item">
+              <h3>USB audio</h3>
+              <p>Select an interface from the Input menu when the browser exposes it as a microphone.</p>
+            </article>
+            <article class="info-item">
+              <h3>MIDI control</h3>
+              <p>Use note or CC messages for track recording and transport controls in browsers with Web MIDI.</p>
+            </article>
+            <article class="info-item">
+              <h3>Stage latency</h3>
+              <p>Wired monitoring and a native mobile audio layer will matter for serious live performance.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="android" class="site-section android-section">
+        <div class="section-inner split-layout">
+          <div>
+            <p class="eyebrow">Android path</p>
+            <h2>Built as a PWA now, ready for a Play Store wrapper later.</h2>
+          </div>
+          <div class="copy-stack">
+            <p>
+              The web app already includes a manifest, installable metadata, and offline caching. The fastest
+              Android route is a Trusted Web Activity; the stronger live-performance route is Capacitor or native
+              Android with low-latency audio.
+            </p>
+            <a class="text-link" href="docs/PLAY_STORE_NOTES.md">Read Play Store notes</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="site-section support-section">
+        <div class="section-inner support-strip">
+          <div>
+            <p class="eyebrow">Local-first</p>
+            <h2>Your recordings stay in this browser unless you export them.</h2>
+          </div>
+          <div class="support-actions">
+            <a class="wide-command link-command" href="support.html">Support</a>
+            <a class="wide-command link-command" href="privacy.html">Privacy</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Looper Station</span>
+      <div>
+        <a href="#studio">Studio</a>
+        <a href="support.html">Support</a>
+        <a href="privacy.html">Privacy</a>
+      </div>
+    </footer>
+
+    <template id="trackTemplate">
+      <article class="track-card">
+        <div class="track-head">
+          <div>
+            <h2></h2>
+            <p class="track-state">Empty</p>
+          </div>
+          <button class="record-button" type="button" aria-label="Record track" title="Record track">
+            <span aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <canvas class="waveform" width="520" height="160" aria-hidden="true"></canvas>
+
+        <div class="track-actions">
+          <button class="icon-button mute-button" type="button" aria-label="Mute track" title="Mute track">
+            <span class="transport-icon mute-icon" aria-hidden="true"></span>
+          </button>
+          <button class="icon-button clear-track-button" type="button" aria-label="Clear track" title="Clear track">
+            <span class="transport-icon clear-icon" aria-hidden="true"></span>
+          </button>
+          <label class="volume-control">
+            <span>Vol</span>
+            <input type="range" min="0" max="1.25" value="1" step="0.01" />
+          </label>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

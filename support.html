@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Support and hardware notes for Looper Station." />
+    <meta name="theme-color" content="#10110f" />
+    <title>Support | Looper Station</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="site-nav" aria-label="Main navigation">
+        <a class="site-brand" href="index.html#studio" aria-label="Looper Station home">
+          <img class="site-mark" src="assets/app-icon.svg" alt="" />
+          <span>Looper Station</span>
+        </a>
+        <div class="nav-links">
+          <a href="index.html#studio">Studio</a>
+          <a href="index.html#hardware">Hardware</a>
+          <a href="index.html#android">Android</a>
+          <a href="support.html">Support</a>
+          <a href="privacy.html">Privacy</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="content-page">
+      <section class="page-hero">
+        <p class="eyebrow">Support</p>
+        <h1>Setup notes for recording and hardware.</h1>
+        <p>
+          The browser version is useful for testing the workflow. For stage-grade performance, test with the exact
+          phone, browser, audio interface, and controller you plan to use.
+        </p>
+      </section>
+
+      <section class="text-section">
+        <h2>Mic access</h2>
+        <p>
+          Open the site from localhost or HTTPS, then select Enable mic. If the browser blocks the prompt, check site
+          permissions and reload.
+        </p>
+      </section>
+
+      <section class="text-section">
+        <h2>Audio interface</h2>
+        <p>
+          Connect the interface before enabling the mic. After permission is granted, choose the device from the Input
+          menu. Wired headphones reduce feedback and latency.
+        </p>
+      </section>
+
+      <section class="text-section">
+        <h2>MIDI controller</h2>
+        <p>
+          Enable MIDI from the control panel. Notes 36-41 or CC 20-25 control tracks 1-6. Note 42 or CC 102 starts
+          playback. Note 43 or CC 103 stops playback.
+        </p>
+      </section>
+
+      <section class="text-section">
+        <h2>Saved takes</h2>
+        <p>
+          Saved takes live in the current browser profile. Clearing site data can delete them. Export WAV files for
+          anything you want to keep outside the browser.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Looper Station</span>
+      <div>
+        <a href="index.html#studio">Studio</a>
+        <a href="support.html">Support</a>
+        <a href="privacy.html">Privacy</a>
+      </div>
+    </footer>
+  </body>
+</html>
