@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Looper Station is a local-first browser looper for recording, overdubbing, saving, and exporting live loops."
+      content="Looper Station — a local-first browser looper for recording, overdubbing, saving, and exporting live loops. Built with Web Audio API, MIDI, and IndexedDB."
     />
-    <meta name="theme-color" content="#10110f" />
+    <meta name="theme-color" content="#0c0d0b" />
     <title>Looper Station</title>
     <meta property="og:title" content="Looper Station" />
     <meta property="og:description" content="Record loops, overdub, connect MIDI, save takes, and export WAV from the browser." />
@@ -15,8 +15,13 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   </head>
   <body>
+    <!-- Toast notification -->
+    <div id="toast" role="status" aria-live="polite"></div>
+
     <header class="site-header">
       <nav class="site-nav" aria-label="Main navigation">
         <a class="site-brand" href="#studio" aria-label="Looper Station home">
@@ -29,6 +34,10 @@
           <a href="#android">Android</a>
           <a href="support.html">Support</a>
           <a href="privacy.html">Privacy</a>
+          <a class="github-link" href="https://github.com/chirag-hehe/Looper-Station" target="_blank" rel="noopener" aria-label="View source on GitHub">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+            GitHub
+          </a>
         </div>
       </nav>
     </header>
@@ -37,19 +46,28 @@
       <section id="studio" class="studio-band">
         <div class="site-intro">
           <p class="eyebrow">Browser looper for live layers</p>
-          <h1>Looper Station</h1>
+          <h1>Looper<br/>Station</h1>
           <p>
             Record vocals, instruments, or beatbox layers, overdub them into loops, save takes locally,
-            connect MIDI controls, and export a WAV when the idea lands.
+            connect MIDI controls, and export a WAV — all in the browser, no install needed.
           </p>
-          <div class="signal-row" aria-label="Product signals">
+          <div class="signal-row" aria-label="Product highlights">
             <span>Local-first</span>
             <span>MIDI-ready</span>
             <span>PWA-ready</span>
+            <span>WAV export</span>
           </div>
         </div>
 
+        <!-- First-run hint, shown via JS if mic not yet enabled -->
+        <div id="firstRunHint" class="first-run-hint" hidden>
+          <span class="hint-icon">👋</span>
+          <span>Start by clicking <strong>Enable mic</strong> in the panel on the right, then hit a track's record button to begin looping.</span>
+          <button type="button" aria-label="Dismiss hint" id="dismissHint">✕</button>
+        </div>
+
         <div class="app-shell">
+          <!-- Topbar -->
           <header class="topbar">
             <div class="brand-block">
               <img class="app-mark" src="assets/app-icon.svg" alt="" />
@@ -60,7 +78,7 @@
             </div>
 
             <div class="transport" aria-label="Transport controls">
-              <button id="playBtn" class="icon-button primary" type="button" aria-label="Play" title="Play">
+              <button id="playBtn" class="icon-button primary" type="button" aria-label="Play" title="Play / Stop (Space)">
                 <span class="transport-icon play-icon" aria-hidden="true"></span>
               </button>
               <button id="stopBtn" class="icon-button" type="button" aria-label="Stop" title="Stop">
@@ -75,103 +93,178 @@
             </div>
           </header>
 
+          <!-- Keyboard shortcut hints bar -->
+          <div class="shortcuts-bar" aria-label="Keyboard shortcuts">
+            <div class="shortcut-badge"><kbd>Space</kbd> Play/Stop</div>
+            <div class="shortcut-sep"></div>
+            <div class="shortcut-badge"><kbd>1</kbd>–<kbd>6</kbd> Arm track</div>
+            <div class="shortcut-sep"></div>
+            <div class="shortcut-badge"><kbd>M</kbd> Metronome</div>
+            <div class="shortcut-sep"></div>
+            <div class="shortcut-badge"><kbd>O</kbd> Overdub</div>
+            <div class="shortcut-sep"></div>
+            <div class="shortcut-badge"><kbd>Q</kbd> Cycle quantize</div>
+          </div>
+
+          <!-- Scope / Meter -->
           <section class="meter-strip" aria-label="Session meter">
             <canvas id="scopeCanvas" width="1280" height="180" aria-hidden="true"></canvas>
             <div class="readouts">
               <div>
                 <span class="readout-label">Loop</span>
-                <strong id="loopReadout">00.0s</strong>
+                <strong id="loopReadout" class="mono">00.0s</strong>
               </div>
               <div>
                 <span class="readout-label">Tracks</span>
-                <strong id="trackReadout">0/6</strong>
+                <strong id="trackReadout" class="mono">0/6</strong>
               </div>
               <div>
                 <span class="readout-label">Clock</span>
-                <strong id="clockReadout">00:00</strong>
+                <strong id="clockReadout" class="mono">00:00</strong>
               </div>
             </div>
           </section>
 
+          <!-- Workspace -->
           <section class="workspace">
-            <div id="trackGrid" class="track-grid" aria-label="Loop tracks"></div>
+            <div class="track-area">
+              <div id="trackGrid" class="track-grid" aria-label="Loop tracks"></div>
+            </div>
 
             <aside class="control-panel" aria-label="Session controls">
-              <div class="control-row">
-                <label for="bpmInput">BPM</label>
-                <input id="bpmInput" type="number" min="45" max="220" value="90" inputmode="numeric" />
+
+              <!-- Timing -->
+              <div class="panel-section">
+                <p class="panel-section-label">Timing</p>
+
+                <div class="control-row">
+                  <label for="bpmInput">
+                    BPM
+                    <span class="shortcut-hint">45–220</span>
+                  </label>
+                  <input id="bpmInput" type="number" min="45" max="220" value="90" inputmode="numeric" />
+                </div>
+
+                <div class="control-row">
+                  <label for="beatsInput">
+                    Beats
+                    <span class="shortcut-hint">1–16</span>
+                  </label>
+                  <input id="beatsInput" type="number" min="1" max="16" value="4" inputmode="numeric" />
+                </div>
+
+                <div class="control-row">
+                  <label for="quantizeSelect">
+                    Quantize
+                    <span class="shortcut-hint">Q to cycle</span>
+                  </label>
+                  <select id="quantizeSelect">
+                    <option value="bar" selected>Bar</option>
+                    <option value="beat">Beat</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
               </div>
 
-              <div class="control-row">
-                <label for="beatsInput">Beats</label>
-                <input id="beatsInput" type="number" min="1" max="16" value="4" inputmode="numeric" />
+              <!-- Toggles -->
+              <div class="panel-section">
+                <p class="panel-section-label">Options</p>
+
+                <div class="toggle-row">
+                  <div>
+                    <span>Metronome</span>
+                    <div class="shortcut-hint">M</div>
+                  </div>
+                  <button id="metronomeBtn" class="toggle-button" type="button" aria-pressed="false" aria-label="Toggle metronome">
+                    <span aria-hidden="true"></span>
+                  </button>
+                </div>
+
+                <div class="toggle-row">
+                  <div>
+                    <span>Overdub</span>
+                    <div class="shortcut-hint">O</div>
+                  </div>
+                  <button id="overdubBtn" class="toggle-button" type="button" aria-pressed="true" aria-label="Toggle overdub">
+                    <span aria-hidden="true"></span>
+                  </button>
+                </div>
               </div>
 
-              <div class="control-row">
-                <label for="quantizeSelect">Quantize</label>
-                <select id="quantizeSelect">
-                  <option value="bar" selected>Bar</option>
-                  <option value="beat">Beat</option>
-                  <option value="off">Off</option>
-                </select>
+              <!-- Mix -->
+              <div class="panel-section">
+                <p class="panel-section-label">Mix</p>
+
+                <div class="control-row slider-row">
+                  <label for="monitorSlider">Monitor</label>
+                  <input id="monitorSlider" type="range" min="0" max="1" value="0" step="0.01" />
+                </div>
+
+                <div class="control-row slider-row">
+                  <label for="masterSlider">Master</label>
+                  <input id="masterSlider" type="range" min="0" max="1.25" value="0.95" step="0.01" />
+                </div>
               </div>
 
-              <div class="toggle-row">
-                <span>Metronome</span>
-                <button id="metronomeBtn" class="toggle-button" type="button" aria-pressed="false" aria-label="Toggle metronome">
-                  <span aria-hidden="true"></span>
-                </button>
+              <!-- Device -->
+              <div class="panel-section">
+                <p class="panel-section-label">Device</p>
+
+                <div class="control-row device-row">
+                  <label for="inputDeviceSelect">Input</label>
+                  <select id="inputDeviceSelect">
+                    <option value="">Default input</option>
+                  </select>
+                </div>
+
+                <button id="micBtn" class="wide-command" type="button">Enable mic</button>
+                <button id="midiBtn" class="wide-command" type="button">Enable MIDI</button>
+                <p id="midiStatus" class="panel-status">MIDI idle</p>
               </div>
 
-              <div class="toggle-row">
-                <span>Overdub</span>
-                <button id="overdubBtn" class="toggle-button" type="button" aria-pressed="true" aria-label="Toggle overdub">
-                  <span aria-hidden="true"></span>
-                </button>
+              <!-- Sessions -->
+              <div class="panel-section">
+                <p class="panel-section-label">Sessions</p>
+
+                <div class="control-row save-row">
+                  <label for="sessionSelect">Saved take</label>
+                  <select id="sessionSelect">
+                    <option value="">No saved takes</option>
+                  </select>
+                </div>
+
+                <div class="button-row">
+                  <button id="saveBtn" class="icon-button" type="button" aria-label="Save session" title="Save session">
+                    <span class="transport-icon save-icon" aria-hidden="true"></span>
+                  </button>
+                  <button id="loadBtn" class="icon-button" type="button" aria-label="Load selected session" title="Load session">
+                    <span class="transport-icon load-icon" aria-hidden="true"></span>
+                  </button>
+                  <button id="deleteSaveBtn" class="icon-button danger" type="button" aria-label="Delete selected session" title="Delete session">
+                    <span class="transport-icon clear-icon" aria-hidden="true"></span>
+                  </button>
+                </div>
+
+                <a id="downloadLink" class="download-link" href="#" download="looper-station-loop.wav" hidden>⬇ Download WAV</a>
               </div>
 
-              <div class="control-row slider-row">
-                <label for="monitorSlider">Monitor</label>
-                <input id="monitorSlider" type="range" min="0" max="1" value="0" step="0.01" />
-              </div>
-
-              <div class="control-row slider-row">
-                <label for="masterSlider">Master</label>
-                <input id="masterSlider" type="range" min="0" max="1.25" value="0.95" step="0.01" />
-              </div>
-
-              <div class="control-row device-row">
-                <label for="inputDeviceSelect">Input</label>
-                <select id="inputDeviceSelect">
-                  <option value="">Default input</option>
-                </select>
-              </div>
-
-              <div class="control-row save-row">
-                <label for="sessionSelect">Saved take</label>
-                <select id="sessionSelect">
-                  <option value="">No saved takes</option>
-                </select>
-              </div>
-
-              <div class="button-row">
-                <button id="saveBtn" class="icon-button" type="button" aria-label="Save session" title="Save session">
-                  <span class="transport-icon save-icon" aria-hidden="true"></span>
-                </button>
-                <button id="loadBtn" class="icon-button" type="button" aria-label="Load selected session" title="Load selected session">
-                  <span class="transport-icon load-icon" aria-hidden="true"></span>
-                </button>
-                <button id="deleteSaveBtn" class="icon-button danger" type="button" aria-label="Delete selected session" title="Delete selected session">
-                  <span class="transport-icon clear-icon" aria-hidden="true"></span>
-                </button>
-              </div>
-
-              <button id="micBtn" class="wide-command" type="button">Enable mic</button>
-              <button id="midiBtn" class="wide-command" type="button">Enable MIDI</button>
-              <p id="midiStatus" class="panel-status">MIDI idle</p>
-              <a id="downloadLink" class="download-link" href="#" download="looper-station-loop.wav" hidden>WAV ready</a>
             </aside>
           </section>
+        </div>
+      </section>
+
+      <!-- Tech stack callout for portfolio / recruiters -->
+      <section class="site-section" style="padding: 28px 20px;">
+        <div class="section-inner">
+          <div class="signal-row" style="justify-content: center; gap: 10px;">
+            <span>Web Audio API</span>
+            <span>MediaRecorder</span>
+            <span>Web MIDI API</span>
+            <span>IndexedDB</span>
+            <span>Service Worker</span>
+            <span>OfflineAudioContext</span>
+            <span>PWA</span>
+          </div>
         </div>
       </section>
 
@@ -180,6 +273,7 @@
           <div>
             <p class="eyebrow">External gear</p>
             <h2>Bring your mic, interface, or footswitch.</h2>
+            <p style="color: var(--muted); font-size: 0.9rem; line-height: 1.6;">Works with any audio input the browser can see, including USB interfaces.</p>
           </div>
           <div class="info-grid">
             <article class="info-item">
@@ -229,38 +323,49 @@
       </section>
     </main>
 
-    <footer class="site-footer">
-      <span>Looper Station</span>
-      <div>
-        <a href="#studio">Studio</a>
-        <a href="support.html">Support</a>
-        <a href="privacy.html">Privacy</a>
+    <footer>
+      <div class="site-footer">
+        <span class="footer-brand">Looper Station</span>
+        <div class="footer-links">
+          <a href="#studio">Studio</a>
+          <a href="support.html">Support</a>
+          <a href="privacy.html">Privacy</a>
+          <a class="github-link" href="https://github.com/chirag-hehe/Looper-Station" target="_blank" rel="noopener">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+            Source
+          </a>
+        </div>
       </div>
     </footer>
 
+    <!-- Track template -->
     <template id="trackTemplate">
       <article class="track-card">
         <div class="track-head">
-          <div>
-            <h2></h2>
-            <p class="track-state">Empty</p>
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <div class="track-num-badge"></div>
+            <div class="track-info">
+              <p class="track-name"></p>
+              <p class="track-state">Empty</p>
+            </div>
           </div>
           <button class="record-button" type="button" aria-label="Record track" title="Record track">
-            <span aria-hidden="true"></span>
+            <span class="record-button-dot" aria-hidden="true"></span>
+            <span class="kbd-hint"></span>
           </button>
         </div>
 
         <canvas class="waveform" width="520" height="160" aria-hidden="true"></canvas>
 
         <div class="track-actions">
-          <button class="icon-button mute-button" type="button" aria-label="Mute track" title="Mute track">
+          <button class="icon-button mute-button" type="button" aria-label="Mute track" title="Mute track" aria-pressed="false">
             <span class="transport-icon mute-icon" aria-hidden="true"></span>
           </button>
           <button class="icon-button clear-track-button" type="button" aria-label="Clear track" title="Clear track">
             <span class="transport-icon clear-icon" aria-hidden="true"></span>
           </button>
           <label class="volume-control">
-            <span>Vol</span>
+            <span>VOL</span>
             <input type="range" min="0" max="1.25" value="1" step="0.01" />
           </label>
         </div>
